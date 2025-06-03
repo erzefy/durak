@@ -6,6 +6,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+<<<<<<< HEAD
+    "preview": "vite preview",
+    "test": "node client/index.ts"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.29",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+=======
     "preview": "vite preview"
   },
   "dependencies": {
@@ -13,6 +29,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
+>>>>>>> origin/main
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2"
   }
