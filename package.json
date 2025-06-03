@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+<<<<<<< HEAD
     "preview": "vite preview",
     "test": "node client/index.ts"
   },
@@ -20,6 +21,15 @@
     "@vue/tsconfig": "^0.7.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
+=======
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+>>>>>>> origin/main
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2"
   }
