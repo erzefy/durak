@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { io } from 'socket.io-client'
 
-const socket = io('http://192.168.31.10:3001')
+const socket = io('http://192.168.31.10:3005')
 
 const gameState = ref(null)
 const selectedCard = ref(null)
