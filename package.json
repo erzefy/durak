@@ -2,7 +2,8 @@
   "name": "durak-game",
   "version": "0.0.0",
   "private": true,
-  "type": "module",  "scripts": {
+  "type": "module",  
+  "scripts": {
     "dev:client": "vite",
     "dev:server": "cd server && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
