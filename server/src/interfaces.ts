@@ -10,6 +10,7 @@ export interface PlayerState {
   cards: Card[];
   isAttacker: boolean;
   isReady: boolean;
+  hasPickedUpCards: boolean; // Флаг, показывающий, брал ли игрок карты в текущем раунде
 }
 
 export interface LobbyState {
@@ -30,6 +31,7 @@ export interface GameState {
       name: string;
       cards: Card[];
       isAttacker: boolean;
+      hasPickedUpCards: boolean;
     }
   };
   table: {
@@ -41,8 +43,10 @@ export interface GameState {
   winner?: string;
   maxPlayers: number;
   currentPlayers: number;
-  nextDefender?: string;
+  nextDefender: string;
   canTakeCards: boolean;
   turnOrder: string[]; // Порядок ходов игроков
   passedPlayers: string[]; // Игроки, которые пропустили ход
+  roundEnded: boolean; // Флаг окончания раунда
+  firstMove: boolean; // Флаг первого хода в игре
 }

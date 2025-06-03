@@ -112,9 +112,14 @@ onMounted(() => {
     gameState.value = state;
     updateGameStatus();
   });
-
   socket.on('gameEnded', ({ winner }) => {
-    status.value = winner === socket.id ? 'Вы победили!' : 'Вы проиграли!';
+    if (winner === socket.id) {
+      status.value = 'Поздравляем! Вы победили!';
+    } else if (gameState.value?.players.others.find(p => p.id === winner)) {
+      status.value = `Игрок ${gameState.value.players.others.find(p => p.id === winner).name} победил!`;
+    } else {
+      status.value = 'Игра окончена!';
+    }
     gameState.value = null;
     currentLobby.value = null;
     showLobbyForm.value = true;
@@ -146,15 +151,100 @@ const updateGameStatus = () => {
   }
 }
 
-const playCard = (card) => {
-  if (gameState.value?.currentTurn === socket.id) {
-    socket.emit('playCard', {
-      lobbyId: gameState.value.lobbyId,
-      card,
-      isDefending: isDefending.value
-    });
-    selectedCard.value = card;
+const getSuitSymbol = (suit) => {
+  const symbols = {
+    'hearts': '♥',
+    'diamonds': '♦',
+    'clubs': '♣',
+    'spades': '♠'
+  };
+  return symbols[suit] || suit;
+}
+
+const canAttackWith = (card) => {
+  if (!gameState.value || gameState.value.currentTurn !== socket.id) return false;
+  if (!gameState.value.players.self.isAttacker) return false;
+  if (gameState.value.players.self.hasPickedUpCards) return false; // Нельзя подкидывать, если взял карты
+
+  // Первый ход
+  if (gameState.value.table.attacking.length === 0) {
+    // Если есть не козырные карты, нельзя ходить козырем
+    const hasNonTrumpCards = gameState.value.players.self.cards.some(
+      c => c.suit !== gameState.value.trump.suit
+    );
+    if (hasNonTrumpCards && card.suit === gameState.value.trump.suit) {
+      return false;
+    }
+    return true;
   }
+
+  // Нельзя подкидывать больше 6 карт
+  if (gameState.value.table.attacking.length >= 6) return false;
+
+  // Нельзя подкидывать больше, чем карт у защищающегося
+  const defender = gameState.value.players.others.find(
+    p => p.id === gameState.value.nextDefender
+  );
+  if (defender && defender.cardCount <= gameState.value.table.attacking.length) {
+    return false;
+  }
+
+  // Подкидывать можно только карты тех же достоинств, что уже есть на столе
+  const validRanks = new Set([
+    ...gameState.value.table.attacking.map(c => c.rank),
+    ...gameState.value.table.defending.filter(c => c !== null).map(c => c.rank)
+  ]);
+
+  return validRanks.has(card.rank);
+}
+
+const canDefendWith = (card) => {
+  if (!gameState.value || gameState.value.nextDefender !== socket.id) return false;
+  
+  const lastAttackingCard = gameState.value.table.attacking[
+    gameState.value.table.defending.length
+  ];
+  if (!lastAttackingCard) return false;
+
+  // Если атакующая карта козырная
+  if (lastAttackingCard.suit === gameState.value.trump.suit) {
+    // Можно бить только старшим козырем
+    return card.suit === gameState.value.trump.suit && card.value > lastAttackingCard.value;
+  }
+
+  // Если карта защиты козырная, а атакующая нет - можно бить
+  if (card.suit === gameState.value.trump.suit && lastAttackingCard.suit !== gameState.value.trump.suit) {
+    return true;
+  }
+
+  // В остальных случаях можно бить только старшей картой той же масти
+  return card.suit === lastAttackingCard.suit && card.value > lastAttackingCard.value;
+}
+
+const playCard = (card) => {
+  if (!gameState.value || !gameState.value.lobbyId) return;
+
+  const isDefendingNow = gameState.value.nextDefender === socket.id;
+  
+  // Проверяем, можно ли сыграть карту
+  if (isDefendingNow) {
+    if (!canDefendWith(card)) {
+      status.value = 'Этой картой нельзя отбиться!';
+      return;
+    }
+  } else {
+    if (!canAttackWith(card)) {
+      status.value = 'Этой картой сейчас нельзя ходить!';
+      return;
+    }
+  }
+
+  socket.emit('playCard', {
+    lobbyId: gameState.value.lobbyId,
+    card,
+    isDefending: isDefendingNow
+  });
+  selectedCard.value = card;
 }
 </script>
 
@@ -215,9 +305,26 @@ const playCard = (card) => {
     </div>
 
     <!-- Игровой стол -->
-    <div v-else-if="gameState" class="game-board">
-      <!-- Статус игры -->
-      <div class="status">{{ status }}</div>
+    <div v-else-if="gameState" class="game-board">      <!-- Статус игры -->
+      <div class="game-info">
+        <div class="status">{{ status }}</div>
+        <div class="trump-info" v-if="gameState.trump">
+          Козырь: <span :class="gameState.trump.suit">{{ getSuitSymbol(gameState.trump.suit) }}</span>
+        </div>
+        <div class="turn-info">
+          <template v-if="gameState.status === 'playing'">
+            <span v-if="gameState.currentTurn === socket.id">
+              {{ isDefending ? 'Ваш ход: Отбейтесь от карт' : 'Ваш ход: Атакуйте' }}
+            </span>
+            <span v-else>
+              {{ isDefending ? 'Ожидайте атаки' : 'Ход игрока: ' + (gameState.players.others.find(p => p.id === gameState.currentTurn)?.name || 'Противник') }}
+            </span>
+          </template>
+          <span v-else-if="gameState.status === 'taking_cards'">
+            {{ gameState.nextDefender === socket.id ? 'Вы берете карты' : 'Игрок берет карты' }}
+          </span>
+        </div>
+      </div>
 
       <!-- Карты других игроков -->
       <div class="other-players">
@@ -252,12 +359,24 @@ const playCard = (card) => {
                :key="'attack' + index" 
                class="card-pair">
             <div class="card" :class="attack.suit">
-              {{ attack.rank }}
+              <div class="card-content">
+                <div class="card-top">{{ attack.rank }}</div>
+                <div class="card-suit">
+                  {{ getSuitSymbol(attack.suit) }}
+                </div>
+                <div class="card-bottom">{{ attack.rank }}</div>
+              </div>
             </div>
             <div v-if="gameState.table.defending[index]" 
                  class="card defending" 
                  :class="gameState.table.defending[index].suit">
-              {{ gameState.table.defending[index].rank }}
+              <div class="card-content">
+                <div class="card-top">{{ gameState.table.defending[index].rank }}</div>
+                <div class="card-suit">
+                  {{ getSuitSymbol(gameState.table.defending[index].suit) }}
+                </div>
+                <div class="card-bottom">{{ gameState.table.defending[index].rank }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -290,9 +409,14 @@ const playCard = (card) => {
                  'selected': selectedCard && selectedCard.suit === card.suit && selectedCard.rank === card.rank,
                  'playable': gameState.currentTurn === socket.id
                }
-             ]"
-             @click="playCard(card)">
-          {{ card.rank }}
+             ]"             @click="playCard(card)">
+          <div class="card-content">
+            <div class="card-top">{{ card.rank }}</div>
+            <div class="card-suit">
+              {{ getSuitSymbol(card.suit) }}
+            </div>
+            <div class="card-bottom">{{ card.rank }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -408,19 +532,14 @@ const playCard = (card) => {
 }
 
 .card {
-  width: 60px;
-  height: 90px;
-  border: 2px solid #000;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  width: 100px;
+  height: 150px;
   background: white;
-  font-weight: bold;
-  font-size: 1.2em;
+  border: 2px solid #333;
+  border-radius: 10px;
+  margin: 5px;
   position: relative;
-  transition: transform 0.2s;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 .card-back {
@@ -430,8 +549,32 @@ const playCard = (card) => {
 }
 
 .deck {
-  color: white;
-  font-size: 0.8em;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+}
+
+.trump-card {
+  transform: rotate(90deg);
+  margin-left: -30px;
+}
+
+.deck-pile {
+  position: relative;
+}
+
+.deck-pile::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
 }
 
 .player-hand, .opponent-hand {
@@ -450,19 +593,16 @@ const playCard = (card) => {
 
 .playing-field {
   display: flex;
-  gap: 20px;
   justify-content: center;
-  flex-wrap: wrap;
+  align-items: center;
   min-height: 200px;
   padding: 20px;
-  background: rgba(255,255,255,0.1);
-  border-radius: 10px;
 }
 
 .card-pair {
-  position: relative;
-  width: 70px;
-  height: 100px;
+  display: flex;
+  flex-direction: column;
+  margin: 0 10px;
 }
 
 .card-pair .defending {
@@ -481,26 +621,39 @@ const playCard = (card) => {
   box-shadow: 0 0 15px rgba(255,255,255,0.3);
 }
 
+.game-info {
+  background: rgba(0,0,0,0.5);
+  padding: 15px;
+  border-radius: 10px;
+  color: white;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.trump-info {
+  margin: 10px 0;
+  font-size: 1.2em;
+}
+
+.trump-info span {
+  font-size: 1.5em;
+  vertical-align: middle;
+}
+
+.turn-info {
+  font-size: 1.1em;
+  font-weight: bold;
+}
+
+/* Улучшаем отображение мастей */
 .hearts, .diamonds {
-  color: #ff0000;
+  color: #ff4444;
+  text-shadow: 0 0 2px rgba(255,255,255,0.5);
 }
 
 .clubs, .spades {
-  color: #000;
-}
-
-.game-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin: 10px 0;
-}
-
-.status {
-  text-align: center;
-  color: white;
-  font-size: 1.2em;
-  margin-bottom: 10px;
+  color: #333;
+  text-shadow: 0 0 2px rgba(255,255,255,0.5);
 }
 
 button {
@@ -522,5 +675,69 @@ button:disabled {
   background: #cccccc;
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.card-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 5px;
+}
+
+.card-top {
+  text-align: left;
+}
+
+.card-suit {
+  font-size: 24px;
+  text-align: center;
+}
+
+.card-bottom {
+  text-align: right;
+  transform: rotate(180deg);
+}
+
+.trump-card {
+  transform: rotate(-90deg);
+  margin-left: -30px; /* Сдвигаем козырь влево, чтобы он выглядел как-будто лежит под колодой */
+}
+
+.playing-field .card-pair {
+  position: relative;
+  perspective: 1000px;
+}
+
+.playing-field .defending {
+  transform: translate(20px, 20px);
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+}
+
+/* Добавляем подсветку для карт, которыми можно ходить */
+.card.playable {
+  box-shadow: 0 0 10px #4CAF50;
+}
+
+.card.playable:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 0 15px #4CAF50;
+}
+
+/* Подсветка для текущего игрока */
+.opponent.current {
+  box-shadow: 0 0 15px rgba(255,255,0,0.5);
+  background: rgba(255,255,0,0.2);
+}
+
+/* Анимация для взятия карт */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.card.taking {
+  animation: shake 0.5s ease-in-out;
 }
 </style>
